@@ -1,0 +1,5 @@
+# vim: filetype=toml
+[toolchain]
+channel = "nightly-2021-01-04"
+components = [ "rustfmt" ]
+targets = [ "x86_64-apple-darwin", "x86_64-unknown-linux-gnu" ]

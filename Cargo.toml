@@ -1,3 +1,5 @@
+cargo-features = ["strip"]
+
 [package]
 name = "retry"
 version = "0.1.0"
@@ -14,3 +16,8 @@ shlex = { git = "https://github.com/fenhl/rust-shlex" }
 
 [build-dependencies]
 built = { version = "0.4", features = ["chrono", "git2"] }
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = "symbols"
