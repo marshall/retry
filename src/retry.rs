@@ -13,6 +13,7 @@ pub struct Retry {
   command: String,
   args: Vec<String>,
   start: SystemTime,
+  prev_exit_code: Option<i32>,
 }
 
 impl Retry {
@@ -25,39 +26,51 @@ impl Retry {
       args: args.into(),
       start: SystemTime::now(),
       config,
+      prev_exit_code: None,
     }
   }
 
   fn build_command(&self) -> Command {
     let mut cmd = Command::new(&self.command);
-    for arg in &self.args {
-      cmd.arg(&arg);
+    let prev_sleep = self.sleep_duration().as_secs();
+    let next_sleep = self.sleep_duration_from_count(self.count + 1).as_secs();
+
+    cmd
+      .args(&self.args)
+      .env("RETRY_TRY", (self.count + 1).to_string())
+      .env("RETRY_MAX", self.config.max_tries.to_string())
+      .env("RETRY_NEXT_SLEEP", next_sleep.to_string());
+
+    if self.count > 0 {
+      cmd.env("RETRY_PREV_SLEEP", prev_sleep.to_string());
     }
+
+    if let Some(prev_exit_code) = self.prev_exit_code {
+      cmd.env("RETRY_PREV_EXIT_CODE", prev_exit_code.to_string());
+    }
+
     cmd
   }
 
   fn keep_trying(&mut self) -> bool {
     self.count += 1;
-    self.config.max_retries == 0 || self.count < self.config.max_retries
+    self.config.max_tries == 0 || self.count < self.config.max_tries
   }
 
-  fn print_command(&self) {
-    let mut run = format!("try #{}", self.count + 1);
-    if self.config.max_retries != 0 {
-      run += &format!("/{}", self.config.max_retries);
-    };
-
-    let args = self
-      .args
-      .iter()
-      .map(|a| shlex::quote(&a))
-      .collect::<Vec<_>>()
-      .join(" ");
-
-    self.log(
-      INFO,
-      format!("{}: {} {}", &run, shlex::quote(&self.command), args),
+  fn log_run(&self) {
+    let run = format!(
+      "try #{}{}: {} {}",
+      self.count + 1,
+      if self.config.max_tries != 0 {
+        format!("/{}", self.config.max_tries)
+      } else {
+        "".to_string()
+      },
+      &shlex::quote(&self.command),
+      shlex::join(&self.args)
     );
+
+    self.log(INFO, run);
   }
 
   fn log(&self, level: i32, msg: String) {
@@ -74,18 +87,21 @@ impl Retry {
   }
 
   fn sleep_duration(&self) -> Duration {
-    match self.config.sleep {
-      Some(secs) => Duration::from_secs(secs),
-      None => {
-        let exp = 2u64.pow(self.count as u32);
-        Duration::from_secs(std::cmp::min(exp, self.config.max_sleep))
-      }
+    self.sleep_duration_from_count(self.count)
+  }
+
+  fn sleep_duration_from_count(&self, count: u64) -> Duration {
+    if self.config.backoff {
+      let exp = 2u64.pow(count as u32);
+      Duration::from_secs(std::cmp::min(exp, self.config.max_backoff))
+    } else {
+      Duration::from_secs(self.config.sleep)
     }
   }
 
-  pub fn retry(&mut self) {
+  pub fn retry(&mut self) -> Option<i32> {
     loop {
-      self.print_command();
+      self.log_run();
 
       let mut cmd = self.build_command();
       let mut child = cmd.spawn().expect("Failed to execute command");
@@ -100,8 +116,11 @@ impl Retry {
         break;
       }
 
-      let msg = match rc.code() {
-        Some(code) => format!("unexpected exit code: {}", code),
+      self.prev_exit_code = rc.code();
+      let msg = match self.prev_exit_code {
+        Some(code) => {
+          format!("unexpected exit code: {}", code)
+        }
         None => "process terminated by signal".to_string(),
       };
 
@@ -117,5 +136,6 @@ impl Retry {
     };
 
     self.log(DEBUG, format!("total duration {}s", total_duration));
+    self.prev_exit_code
   }
 }

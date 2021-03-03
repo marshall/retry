@@ -17,9 +17,11 @@ Continually run any command until it succeeds (or fails!)
 
    or, if you prefer GNU style long options:
 
-        $ retry --max-retries=0 --sleep=2 --retry-on-success ls /dev/ttyUSB1
+        $ retry --max-tries=0 --sleep=2 --retry-on-success ls /dev/ttyUSB1
 
 #### Usage
+
+[//]: # (begin-usage)
 
     retry v0.1.0
     Usage: retry [options] [--] cmd [args..]
@@ -37,4 +39,6 @@ Continually run any command until it succeeds (or fails!)
         -V, --version       Print version information
         -x, --retry-on-success
                             Retry when 'cmd' has an exit code of 0
+
+[//]: # (end-usage)
 

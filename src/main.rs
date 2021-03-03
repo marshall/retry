@@ -12,7 +12,7 @@ pub mod config;
 pub mod retry;
 
 use config::RetryConfig;
-use retry::{Retry, DEBUG, INFO};
+use retry::Retry;
 
 struct RetryCommand {
   opts: Options,
@@ -25,24 +25,29 @@ impl RetryCommand {
 
     let mut opts = Options::new();
     opts.parsing_style(ParsingStyle::StopAtFirstFree);
+    opts.optflag(
+      "b",
+      "backoff",
+      "Sleep times between each try will increase exponentially (up to max-sleep)",
+    );
     opts.optflag("h", "help", "Print this help menu");
     opts.optopt(
       "m",
-      "max-sleep",
-      "Max sleep in seconds between retries when using exponential backoff. default=3600 (1 hour)",
+      "max-backoff",
+      "Max sleep in seconds between tries when using exponential backoff. default=60 (1 minute)",
       "n",
     );
     opts.optopt(
       "n",
-      "max-retries",
-      "Max number of retries. Set to 0 for unlimited retries. default=5",
+      "max-tries",
+      "Max number of tries. Set to 0 for unlimited tries. default=10",
       "n",
     );
     opts.optflag("q", "quiet", "Don't log anything");
     opts.optopt(
       "s",
       "sleep",
-      "Sleep n seconds between retries. Overrides default exponential backoff.",
+      "Sleep n seconds between tries. default=5",
       "n",
     );
     opts.optflag("v", "verbose", "More verbose logging");
@@ -61,42 +66,54 @@ impl RetryCommand {
     Ok(Self { opts, matches })
   }
 
-  pub fn run(&self) -> Result<(), String> {
+  pub fn run(&self) -> Result<Option<i32>, String> {
     let mut config = RetryConfig::new();
     config
       .quiet(self.matches.opt_present("q"))
-      .log_level(if self.matches.opt_present("v") {
-        DEBUG
-      } else {
-        INFO
-      });
+      .verbose(self.matches.opt_present("v"))
+      .retry_on_success(self.matches.opt_present("x"))
+      .backoff(self.matches.opt_present("b"));
 
     if self.matches.opt_present("h") {
       self.print_usage();
-      return Ok(());
+      return Ok(Some(0));
     }
 
     if self.matches.opt_present("V") {
       println!("{}", self.version_info());
-      return Ok(());
+      return Ok(Some(0));
     }
 
-    config.max_retries(self.matches.opt_get_default("n", 5).map_err(|_| {
-      self.print_usage();
-      "Invalid max-retries, must be a number".to_string()
-    })?);
+    config.max_tries(
+      self
+        .matches
+        .opt_get_default("n", config.max_tries)
+        .map_err(|_| {
+          self.print_usage();
+          "Invalid max-tries, must be a number".to_string()
+        })?,
+    );
 
-    config.sleep(self.matches.opt_get::<u64>("s").map_err(|_| {
-      self.print_usage();
-      "Invalid sleep, must be number of seconds".to_string()
-    })?);
+    config.sleep(
+      self
+        .matches
+        .opt_get_default("s", config.sleep)
+        .map_err(|_| {
+          self.print_usage();
+          "Invalid sleep, must be number of seconds".to_string()
+        })?,
+    );
 
-    config.max_sleep(self.matches.opt_get_default("m", 3600).map_err(|_| {
-      self.print_usage();
-      "Invalid max-sleep, must be number of seconds.".to_string()
-    })?);
+    config.max_backoff(
+      self
+        .matches
+        .opt_get_default("m", config.max_backoff)
+        .map_err(|_| {
+          self.print_usage();
+          "Invalid max-backoff, must be number of seconds.".to_string()
+        })?,
+    );
 
-    config.retry_on_success(self.matches.opt_present("x"));
     let command = self.matches.free.clone();
     if command.len() == 0 {
       self.print_usage();
@@ -104,9 +121,7 @@ impl RetryCommand {
     }
 
     config.command(command);
-    Retry::new(config).retry();
-
-    Ok(())
+    Ok(Retry::new(config).retry())
   }
 
   fn version_info(&self) -> String {
@@ -144,6 +159,9 @@ impl RetryCommand {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-  RetryCommand::from_args()?.run()?;
+  if let Some(exit_code) = RetryCommand::from_args()?.run()? {
+    std::process::exit(exit_code);
+  }
+
   Ok(())
 }

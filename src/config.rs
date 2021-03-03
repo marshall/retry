@@ -1,7 +1,10 @@
+use crate::retry::{DEBUG, INFO};
+
 pub struct RetryConfig {
-  pub max_retries: u64,
-  pub sleep: Option<u64>,
-  pub max_sleep: u64,
+  pub max_tries: u64,
+  pub sleep: u64,
+  pub backoff: bool,
+  pub max_backoff: u64,
   pub log_level: i32,
   pub quiet: bool,
   pub retry_on_success: bool,
@@ -11,10 +14,11 @@ pub struct RetryConfig {
 impl Default for RetryConfig {
   fn default() -> Self {
     RetryConfig {
-      max_retries: 5,
-      sleep: None,
-      max_sleep: 3600,
-      log_level: 1,
+      max_tries: 10,
+      sleep: 5,
+      backoff: false,
+      max_backoff: 60,
+      log_level: INFO,
       quiet: false,
       retry_on_success: false,
       command: vec![],
@@ -27,23 +31,33 @@ impl RetryConfig {
     Default::default()
   }
 
-  pub fn max_retries(&mut self, n: u64) -> &mut Self {
-    self.max_retries = n;
+  pub fn max_tries(&mut self, n: u64) -> &mut Self {
+    self.max_tries = n;
     self
   }
 
-  pub fn sleep(&mut self, sleep: Option<u64>) -> &mut Self {
+  pub fn sleep(&mut self, sleep: u64) -> &mut Self {
     self.sleep = sleep;
     self
   }
 
-  pub fn max_sleep(&mut self, max_sleep: u64) -> &mut Self {
-    self.max_sleep = max_sleep;
+  pub fn backoff(&mut self, backoff: bool) -> &mut Self {
+    self.backoff = backoff;
+    self
+  }
+
+  pub fn max_backoff(&mut self, max_backoff: u64) -> &mut Self {
+    self.max_backoff = max_backoff;
     self
   }
 
   pub fn log_level(&mut self, log_level: i32) -> &mut Self {
     self.log_level = log_level;
+    self
+  }
+
+  pub fn verbose(&mut self, verbose: bool) -> &mut Self {
+    self.log_level = if verbose { DEBUG } else { INFO };
     self
   }
 
