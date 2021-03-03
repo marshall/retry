@@ -1,4 +1,4 @@
-## retry
+retry
 ---
 
 Continually run any command until it succeeds (or fails!)
